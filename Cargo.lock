@@ -395,7 +395,6 @@ dependencies = [
  "clap",
  "colored",
  "image",
- "png",
 ]
 
 [[package]]

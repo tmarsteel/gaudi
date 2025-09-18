@@ -3,7 +3,7 @@ use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 use std::io::BufReader;
 use colored::{Color, ColoredString, Colorize, Style};
-use image::{DynamicImage, GenericImageView, ImageBuffer, Rgba, RgbaImage};
+use image::{DynamicImage, GenericImageView, ImageBuffer, ImageReader, Rgba, RgbaImage};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -27,14 +27,12 @@ fn main() {
     let args = Args::parse();
 
     let input_file = std::fs::File::open(&args.input_file).unwrap_or_else(|e| panic!("Could not open file {}: {}", args.input_file.display(), e));
-    let decoder = png::Decoder::new(BufReader::new(input_file));
-    let mut reader = decoder.read_info().unwrap_or_else(|e| panic!("Failed to read PNG data from {}: {}", args.input_file.display(), e));
-    let info = reader.info().clone();
-    let mut image_buffer = vec![0; reader.output_buffer_size().unwrap()];
-    reader.next_frame(&mut image_buffer).unwrap_or_else(|e| panic!("Failed to read PNG data from {}: {}", args.input_file.display(), e));
-    drop(reader);
+    let mut image = DynamicImage::ImageRgba8(ImageReader::new(BufReader::new(input_file))
+        .with_guessed_format().unwrap_or_else(|e| panic!("Failed to read image data from {}: {}", args.input_file.display(), e))
+        .decode().unwrap_or_else(|e| panic!("Failed to decode image data from {}: {}", args.input_file.display(), e))
+        .into_rgba8()
+    );
 
-    let mut image = DynamicImage::ImageRgba8(ImageBuffer::from_vec(info.width, info.height, image_buffer).unwrap());
     if let Some(resize_to_width) = args.resize_to_width {
         let factor = resize_to_width as f32 / image.width() as f32;
         let new_height = (image.height() as f32 * factor) as u32;
