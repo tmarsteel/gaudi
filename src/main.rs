@@ -1,5 +1,5 @@
 use std::fmt::{Debug, Display, Formatter};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 use std::io::BufReader;
 use std::str::FromStr;
@@ -9,28 +9,15 @@ use colored::{Color, ColoredString, Colorize, Style};
 #[command(version, about, long_about = None)]
 struct Args {
     input_file: PathBuf,
+
+    #[arg(long, value_enum, default_value = "up")]
+    vertical_gravity: VerticalDirection,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 enum VerticalDirection {
     UP,
     DOWN,
-}
-
-impl FromStr for VerticalDirection {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "up" => {
-                Ok(VerticalDirection::UP)
-            }
-            "down" => {
-                Ok(VerticalDirection::DOWN)
-            }
-            _ => Err(())
-        }
-    }
 }
 
 struct PixelData<'a> {
@@ -70,6 +57,12 @@ impl <'a> PixelData<'a> {
             ptr,
         }
     }
+
+    fn transparent() -> PixelData<'static> {
+        PixelData {
+            ptr: &[0, 0, 0, 0],
+        }
+    }
 }
 impl Display for PixelData<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -96,6 +89,16 @@ fn main() {
     println!("w {}, h {}, {} bytes", info.width, info.height, image_buffer.len());
 
     let mut row: usize = 0;
+    if info.height % 2 != 0 && args.vertical_gravity == VerticalDirection::DOWN {
+        for col in 0..info.width as usize {
+            let upper_pixel = PixelData::transparent();
+            let lower_pixel_idx = col * 4;
+            let lower_pixel = PixelData::new(&image_buffer[lower_pixel_idx .. lower_pixel_idx + 4]);
+            print!("{}", two_pixels_to_ascii_char(&upper_pixel, &lower_pixel));
+        }
+        println!();
+        row = 1;
+    }
     loop {
         if row + 1 >= info.height as usize {
             break;
@@ -109,6 +112,15 @@ fn main() {
         }
         println!();
         row += 2;
+    }
+    if info.height % 2 != 0 && args.vertical_gravity == VerticalDirection::UP {
+        for col in 0..info.width as usize {
+            let upper_pixel_idx = ((info.height as usize - 1) * (info.width as usize) + col) * 4;
+            let upper_pixel = PixelData::new(&image_buffer[upper_pixel_idx .. upper_pixel_idx + 4]);
+            let lower_pixel = PixelData::transparent();
+            print!("{}", two_pixels_to_ascii_char(&upper_pixel, &lower_pixel));
+        }
+        println!();
     }
 }
 
