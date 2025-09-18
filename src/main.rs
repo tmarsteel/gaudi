@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use image::{DynamicImage, GenericImageView, ImageReader, Rgba,};
 use ansi_term::{ANSIGenericString, Colour, Style};
+use image::imageops::FilterType;
 use crate::bash_syntax::escape_for_string_content;
 
 #[derive(Parser, Debug)]
@@ -22,7 +23,10 @@ struct Args {
     #[arg(long)]
     resize_to_width: Option<u32>,
 
-    #[arg(long, value_enum, default_value = "auto")]
+    #[arg(long, value_enum, default_value = "nearest")]
+    resize_filter: RequestedFilterType,
+
+    #[arg(long, default_value = "auto")]
     color_mode: RequestedColorMode,
 }
 
@@ -32,39 +36,44 @@ enum VerticalDirection {
     DOWN,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum RequestedColorMode {
     TrueColor,
     ANSI,
     M256Color,
     AUTO,
 }
+impl FromStr for RequestedColorMode {
+    type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let input_lowercase = s.to_lowercase();
         match input_lowercase.as_str() {
-            "truecolor" => Ok(ColorMode::TrueColor),
-            "ansi" => Ok(ColorMode::ANSI),
-            "256" => Ok(ColorMode::M256Color),
-            "auto" => {
-                Ok(match env::var("COLORTERM") {
-                    Ok(colorterm) => match colorterm.as_str() {
-                        "truecolor" | "24bit" => ColorMode::TrueColor,
-                        _ => ColorMode::ANSI,
-                    }
-                    _ => ColorMode::ANSI
-                })
-            }
+            "truecolor" => Ok(RequestedColorMode::TrueColor),
+            "ansi" => Ok(RequestedColorMode::ANSI),
+            "256" => Ok(RequestedColorMode::M256Color),
+            "auto" => Ok(RequestedColorMode::AUTO),
             _ => Err("Invalid color mode, use truecolor, ansi, 256 or auto"),
         }
     }
 }
-impl ColorMode {
-    fn color_mapper(&self) -> fn(&Rgba<u8>) -> Colour {
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum RequestedFilterType {
+    Lanczos3,
+    Nearest,
+    Triangle,
+    CatmullRom,
+    Gaussian
+}
+impl Into<FilterType> for RequestedFilterType {
+    fn into(self) -> FilterType {
         match self {
-            ColorMode::TrueColor => color_mapping_truecolor,
-            ColorMode::ANSI => color_mapping_ansi,
-            ColorMode::M256Color => color_mapping_256,
+            RequestedFilterType::Lanczos3 => FilterType::Lanczos3,
+            RequestedFilterType::Nearest => FilterType::Nearest,
+            RequestedFilterType::Triangle => FilterType::Triangle,
+            RequestedFilterType::CatmullRom => FilterType::CatmullRom,
+            RequestedFilterType::Gaussian => FilterType::Gaussian,
         }
     }
 }
@@ -82,7 +91,7 @@ fn main() {
     if let Some(resize_to_width) = args.resize_to_width {
         let factor = resize_to_width as f32 / image.width() as f32;
         let new_height = (image.height() as f32 * factor) as u32;
-        image = image.resize(resize_to_width, new_height, image::imageops::FilterType::Nearest);
+        image = image.resize(resize_to_width, new_height, args.resize_filter.into());
     }
 
     let explicit_mapper: Option<&dyn Fn(&Rgba<u8>) -> Colour> = match args.color_mode {
