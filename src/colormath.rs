@@ -1,5 +1,5 @@
 use ansi_term::Colour;
-use colored::Color::{Black, Blue, BrightBlack, BrightBlue, BrightCyan, BrightGreen, BrightMagenta, BrightRed, BrightWhite, BrightYellow, Cyan, Green, Magenta, Red, TrueColor, White, Yellow};
+use colored::Color::{Black, Blue, Cyan, Green, Magenta, Red, TrueColor, White, Yellow};
 use image::Rgba;
 
 pub fn color_mapping_truecolor(pixel: &Rgba<u8>) -> Colour {
@@ -48,16 +48,16 @@ pub fn color_mapping_256(pixel: &Rgba<u8>) -> Colour {
         b: pixel[2],
     };
 
-    *pick_closest_from(colored_v, &ansi_colors, |c| {
+    *pick_closest_from(colored_v, &ANSI_COLORS, |c| {
         if let Colour::Fixed(index) = *c {
-            ansi_color_to_truecolor[index as usize]
+            ANSI_COLOR_TO_TRUECOLOR[index as usize]
         } else {
             panic!("Not a fixed color");
         }
     }).unwrap()
 }
 
-pub static ansi_colors: [Colour; 256] = [
+pub static ANSI_COLORS: [Colour; 256] = [
     Colour::Fixed(0x00),
     Colour::Fixed(0x01),
     Colour::Fixed(0x02),
@@ -316,7 +316,7 @@ pub static ansi_colors: [Colour; 256] = [
     Colour::Fixed(0xFF),
 ];
 
-static ansi_color_to_truecolor: [(u8, u8, u8); 256] = [
+static ANSI_COLOR_TO_TRUECOLOR: [(u8, u8, u8); 256] = [
     (0x00, 0x00, 0x00),
     (0x80, 0x00, 0x00),
     (0x00, 0x80, 0x00),

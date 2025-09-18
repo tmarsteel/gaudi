@@ -1,8 +1,7 @@
 pub mod colormath;
 pub mod bash_syntax;
 
-use std::{env};
-use std::fmt::{Debug, Display, Formatter, Write};
+use std::fmt::{Debug, Display, Formatter};
 use std::io::BufReader;
 use clap::{Parser, ValueEnum};
 use std::path::PathBuf;

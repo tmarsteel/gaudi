@@ -1,5 +1,5 @@
 use std::fmt;
-use std::fmt::{Debug, Display, Write};
+use std::fmt::{Display};
 use ansi_term::ANSIGenericString;
 
 pub fn write_with_minimal_control_sequences(spans: Vec<ANSIGenericString<'static, str>>, fmt: &mut fmt::Formatter) -> fmt::Result {
