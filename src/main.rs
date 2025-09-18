@@ -2,8 +2,8 @@ use std::fmt::{Debug, Display, Formatter};
 use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 use std::io::BufReader;
-use std::str::FromStr;
 use colored::{Color, ColoredString, Colorize, Style};
+use image::{DynamicImage, GenericImageView, ImageBuffer, Rgba, RgbaImage};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -12,67 +12,15 @@ struct Args {
 
     #[arg(long, value_enum, default_value = "up")]
     vertical_gravity: VerticalDirection,
+
+    #[arg(long)]
+    resize_to_width: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 enum VerticalDirection {
     UP,
     DOWN,
-}
-
-struct PixelData<'a> {
-    ptr: &'a[u8],
-}
-impl <'a> PixelData<'a> {
-    fn red(&self) -> u8 {
-        self.ptr[0]
-    }
-
-    fn green(&self) -> u8 {
-        self.ptr[1]
-    }
-
-    fn blue(&self) -> u8 {
-        self.ptr[2]
-    }
-
-    fn alpha(&self) -> u8 {
-        self.ptr[3]
-    }
-
-    fn is_transparent(&self) -> bool {
-        self.alpha() == 0
-    }
-
-    fn as_color(&self) -> Color {
-        Color::TrueColor {
-            r: self.red(),
-            g: self.green(),
-            b: self.blue(),
-        }
-    }
-
-    fn new(ptr: &'a [u8]) -> PixelData<'a> {
-        PixelData {
-            ptr,
-        }
-    }
-
-    fn transparent() -> PixelData<'static> {
-        PixelData {
-            ptr: &[0, 0, 0, 0],
-        }
-    }
-}
-impl Display for PixelData<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("rgba({}, {}, {}, {})", self.red(), self.green(), self.blue(), self.alpha()))
-    }
-}
-impl Debug for PixelData<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(self, f)
-    }
 }
 
 fn main() {
@@ -86,58 +34,89 @@ fn main() {
     reader.next_frame(&mut image_buffer).unwrap_or_else(|e| panic!("Failed to read PNG data from {}: {}", args.input_file.display(), e));
     drop(reader);
 
-    println!("w {}, h {}, {} bytes", info.width, info.height, image_buffer.len());
+    let mut image = DynamicImage::ImageRgba8(ImageBuffer::from_vec(info.width, info.height, image_buffer).unwrap());
+    if let Some(resize_to_width) = args.resize_to_width {
+        let factor = resize_to_width as f32 / image.width() as f32;
+        let new_height = (image.height() as f32 * factor) as u32;
+        image = image.resize(resize_to_width, new_height, image::imageops::FilterType::Nearest);
+    }
 
-    let mut row: usize = 0;
-    if info.height % 2 != 0 && args.vertical_gravity == VerticalDirection::DOWN {
-        for col in 0..info.width as usize {
-            let upper_pixel = PixelData::transparent();
-            let lower_pixel_idx = col * 4;
-            let lower_pixel = PixelData::new(&image_buffer[lower_pixel_idx .. lower_pixel_idx + 4]);
-            print!("{}", two_pixels_to_ascii_char(&upper_pixel, &lower_pixel));
-        }
-        println!();
-        row = 1;
-    }
-    loop {
-        if row + 1 >= info.height as usize {
-            break;
-        }
-        for col in 0..info.width as usize {
-            let upper_pixel_idx = (row * (info.width as usize) + col) * 4;
-            let upper_pixel = PixelData::new(&image_buffer[upper_pixel_idx .. upper_pixel_idx + 4]);
-            let lower_pixel_idx = ((row + 1) * (info.width as usize) + col) * 4;
-            let lower_pixel = PixelData::new(&image_buffer[lower_pixel_idx .. lower_pixel_idx + 4]);
-            print!("{}", two_pixels_to_ascii_char(&upper_pixel, &lower_pixel));
-        }
-        println!();
-        row += 2;
-    }
-    if info.height % 2 != 0 && args.vertical_gravity == VerticalDirection::UP {
-        for col in 0..info.width as usize {
-            let upper_pixel_idx = ((info.height as usize - 1) * (info.width as usize) + col) * 4;
-            let upper_pixel = PixelData::new(&image_buffer[upper_pixel_idx .. upper_pixel_idx + 4]);
-            let lower_pixel = PixelData::transparent();
-            print!("{}", two_pixels_to_ascii_char(&upper_pixel, &lower_pixel));
-        }
-        println!();
-    }
+    let slices = image_to_ascii(image, args.vertical_gravity, color_mapping_truecolor);
+    slices.into_iter().for_each(|s| print!("{}", s));
 }
 
-fn two_pixels_to_ascii_char(upper_pixel: &PixelData, lower_pixel: &PixelData) -> ColoredString {
-    if upper_pixel.is_transparent() && lower_pixel.is_transparent() {
+fn image_to_ascii(
+    image: DynamicImage,
+    vertical_gravity: VerticalDirection,
+    color_mapper: fn(&Rgba<u8>) -> Color,
+) -> Vec<ColoredString> {
+    let mut as_string: Vec<ColoredString> = Vec::with_capacity((image.width() as usize + 1) * (image.height() as usize / 2 + 1));
+    let mut row: u32 = 0;
+    if image.height() % 2 != 0 && vertical_gravity == VerticalDirection::DOWN {
+        for col in 0..image.width() {
+            let upper_pixel = Rgba::from([0, 0, 0, 0]);
+            let lower_pixel = image.get_pixel(col, 0);
+            as_string.push(two_pixels_to_ascii_char(&upper_pixel, &lower_pixel, color_mapper));
+        }
+        as_string.push("\n".clear());
+        row = 1;
+    }
+
+    loop {
+        if row + 1 >= image.height() {
+            break;
+        }
+        for col in 0..image.width() {
+            let upper_pixel = image.get_pixel(col, row);
+            let lower_pixel = image.get_pixel(col, row + 1);
+            as_string.push(two_pixels_to_ascii_char(&upper_pixel, &lower_pixel, color_mapper));
+        }
+        as_string.push("\n".clear());
+        row += 2;
+    }
+
+    if image.height() % 2 != 0 && vertical_gravity == VerticalDirection::UP {
+        for col in 0..image.width() {
+            let upper_pixel = image.get_pixel(col, image.height() - 1);
+            let lower_pixel = Rgba::from([0, 0, 0, 0]);
+            as_string.push(two_pixels_to_ascii_char(&upper_pixel, &lower_pixel, color_mapper));
+        }
+        as_string.push("\n".clear());
+    }
+
+    as_string
+}
+
+fn is_transparent(pixel: &Rgba<u8>) -> bool {
+    pixel[3] == 0
+}
+
+fn two_pixels_to_ascii_char(
+    upper_pixel: &Rgba<u8>,
+    lower_pixel: &Rgba<u8>,
+    color_mapper: fn (&Rgba<u8>) -> Color,
+) -> ColoredString {
+    if is_transparent(upper_pixel) && is_transparent(lower_pixel) {
         return " ".clear()
     }
 
-    if upper_pixel.is_transparent() {
-        assert!(!lower_pixel.is_transparent());
-        return "▄".color(lower_pixel.as_color())
+    if is_transparent(upper_pixel) {
+        assert!(!is_transparent(lower_pixel));
+        return "▄".color(color_mapper(lower_pixel))
     }
 
-    if lower_pixel.is_transparent() {
-        assert!(!upper_pixel.is_transparent());
-        return "▀".color(upper_pixel.as_color())
+    if is_transparent(lower_pixel) {
+        assert!(!is_transparent(upper_pixel));
+        return "▀".color(color_mapper(upper_pixel))
     }
 
-    "▄".color(lower_pixel.as_color()).on_color(upper_pixel.as_color())
+    "▄".color(color_mapper(lower_pixel)).on_color(color_mapper(upper_pixel))
+}
+
+fn color_mapping_truecolor(pixel: &Rgba<u8>) -> Color {
+    Color::TrueColor {
+        r: pixel[0],
+        g: pixel[1],
+        b: pixel[2],
+    }
 }
