@@ -23,7 +23,7 @@ struct Args {
     #[arg(long)]
     resize_to_width: Option<u32>,
 
-    #[arg(long, value_enum, default_value = "nearest")]
+    #[arg(long, value_enum, default_value = "catmull-rom")]
     resize_filter: RequestedFilterType,
 
     #[arg(long, default_value = "auto")]
